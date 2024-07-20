@@ -6,26 +6,25 @@ use crate::Result;
 pub(crate) const PATH_LOGIN:&str = "/api/v3/user/login";
 pub(crate) const PATH_CAMERAS_ALL: &str = "/api/v3/camera/all";
 pub(crate) const PATH_CAMERA :&str ="/api/v3/camera/";
+pub(crate) const PATH_PHOTOS: &str = "/api/v3/photos/all";
 
-
+// **** Login
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 #[serde(default)]
-pub(crate) struct Login {
-    username:String,
-    password:String,
+pub struct Login {
+    pub username:String,
+    pub password:String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 #[serde(default)]
-struct LoginResponse {
+pub struct LoginResponse {
     uuid:String,
     token:String,
 }
 
-
-
 /// Login logs in to the api. If successful it sets the auth token and uuid on the client.
-pub(crate) async fn login(client: &Client, login: Login) -> Result<()> {
+pub async fn login(client: &Client, login: Login) -> Result<()> {
     let result:LoginResponse = client.send_request(&login, Method::POST, PATH_LOGIN, false).await?;
 
     client.set_auth(result.token);
@@ -35,58 +34,43 @@ pub(crate) async fn login(client: &Client, login: Login) -> Result<()> {
 }
 
 // ***** Cameras
-
-pub(crate) async fn cameras(client: &Client) -> Result<Cameras> {
-   let result:Cameras = client.get_request(PATH_CAMERAS_ALL, true).await?;
-
-   Ok(result)
-}
-
-pub(crate) async fn camera(client: &Client, camera_id: String) -> Result<Camera> {
-    let path = format!("{}{}",PATH_CAMERA, camera_id);
-
-    let result:Camera = client.get_request(path.as_str(), true).await?;
-
-    Ok(result)
-}
-
 pub type Cameras = Vec<Camera>;
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Camera {
     #[serde(rename = "activationDate")]
-    activation_date: String,
+    pub activation_date: String,
 
-    #[serde(rename = "config")]
-    config: Config,
+    #[serde(rename = "Config")]
+    pub config: Config,
 
     #[serde(rename = "hdSince")]
-    hd_since: String,
+    pub hd_since: String,
 
     #[serde(rename = "id")]
-    id: String,
+    pub id: String,
 
     #[serde(rename = "status")]
-    status: Status,
+    pub status: Status,
 
     #[serde(rename = "ucid")]
-    ucid: String,
+    pub ucid: String,
 
     #[serde(rename = "user")]
-    user: String,
+    pub user: String,
 
     #[serde(rename = "isCellular")]
-    is_cellular: bool,
+    pub is_cellular: bool,
 
     #[serde(rename = "subscriptions")]
-    subscriptions: Vec<Subscription>,
+    pub subscriptions: Vec<Subscription>,
 
     #[serde(rename = "dataMatrixKey")]
-    data_matrix_key: String,
+    pub data_matrix_key: String,
 
     #[serde(rename = "ptpNotifications")]
-    ptp_notifications: Vec<Option<serde_json::Value>>,
+    pub ptp_notifications: Vec<Option<serde_json::Value>>,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
@@ -111,7 +95,7 @@ pub struct Config {
     multi_shot: i64,
 
     #[serde(rename = "name")]
-    name: String,
+    pub(crate) name: String,
 
     #[serde(rename = "operationMode")]
     operation_mode: String,
@@ -182,50 +166,72 @@ pub struct TransmitTime {
     minute: i64,
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Coordinate {
+    pub date_time: String,
+    pub latitude: String,
+    pub longitude: String,
+    pub position: Position,
+    #[serde(rename = "geohash")]
+    pub geo_hash: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Position {
+    #[serde(rename = "type")]
+    pub type_field: String,
+    pub coordinates: Vec<f64>,
+}
+
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Status {
     #[serde(rename = "batteries")]
-    batteries: Vec<i64>,
+    pub batteries: Vec<i64>,
 
     #[serde(rename = "batteryType")]
-    battery_type: String,
+    pub battery_type: String,
 
     #[serde(rename = "capability")]
-    capability: Capability,
+    pub capability: Capability,
 
     #[serde(rename = "installDate")]
-    install_date: String,
+    pub install_date: String,
 
     #[serde(rename = "lastUpdate")]
-    last_update: String,
+    pub last_update: String,
 
     #[serde(rename = "memory")]
-    memory: Memory,
+    pub memory: Memory,
 
     #[serde(rename = "model")]
-    model: String,
+    pub model: String,
 
     #[serde(rename = "modemFirmware")]
-    modem_firmware: String,
+    pub modem_firmware: String,
 
     #[serde(rename = "notifications")]
-    notifications: Vec<Option<serde_json::Value>>,
+    pub notifications: Vec<Option<serde_json::Value>>,
 
     #[serde(rename = "serial")]
-    serial: i64,
+    pub serial: i64,
 
     #[serde(rename = "signal")]
-    signal: Signal,
+    pub signal: Signal,
 
     #[serde(rename = "sim")]
-    sim: String,
+    pub sim: String,
 
     #[serde(rename = "temperature")]
-    temperature: Temperature,
+    pub temperature: Temperature,
 
     #[serde(rename = "version")]
-    version: String,
+    pub version: String,
+
+    #[serde(rename = "coordinates")]
+    pub coordinates: Vec<Coordinate>,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
@@ -242,17 +248,17 @@ pub struct Capability {
 #[serde(default)]
 pub struct Memory {
     #[serde(rename = "size")]
-    size: i64,
+    pub size: i64,
 
     #[serde(rename = "used")]
-    used: i64,
+    pub used: i64,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Signal {
     #[serde(rename = "bar")]
-    bar: i64,
+    pub bar: i64,
 
     #[serde(rename = "dBm")]
     d_bm: i64,
@@ -267,7 +273,7 @@ pub struct Signal {
     signal_type: String,
 
     #[serde(rename = "processed")]
-    processed: Processed,
+   pub processed: Processed,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
@@ -277,7 +283,7 @@ pub struct Processed {
     percentage: i64,
 
     #[serde(rename = "bar")]
-    bar: i64,
+    pub bar: i64,
 
     #[serde(rename = "lowSignal")]
     low_signal: bool,
@@ -287,7 +293,7 @@ pub struct Processed {
 #[serde(default)]
 pub struct Temperature {
     #[serde(rename = "value")]
-    value: i64,
+    pub value: i64,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
@@ -300,7 +306,7 @@ pub struct Subscription {
     camera_id: String,
 
     #[serde(rename = "paymentStatus")]
-    payment_status: String,
+    pub(crate) payment_status: String,
 
     #[serde(rename = "isActive")]
     is_active: bool,
@@ -327,7 +333,7 @@ pub struct Subscription {
     month_end_billing_cycle: String,
 
     #[serde(rename = "photoCount")]
-    photo_count: i64,
+    pub photo_count: i64,
 
     #[serde(rename = "isAutoRenew")]
     is_auto_renew: bool,
@@ -386,6 +392,132 @@ pub struct Plan {
 
     #[serde(rename = "isDowngradable")]
     is_downgradable: bool,
+}
+
+pub async fn cameras(client: &Client) -> Result<Cameras> {
+    let result:Cameras = client.get_request(PATH_CAMERAS_ALL, true).await?;
+
+    Ok(result)
+}
+
+pub async fn camera(client: &Client, camera_id: String) -> Result<Camera> {
+    let path = format!("{}{}",PATH_CAMERA, camera_id);
+
+    let result:Camera = client.get_request(path.as_str(), true).await?;
+
+    Ok(result)
+}
+
+// ****** photos
+
+#[derive(Serialize, Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct PhotosRequest {
+    #[serde(rename = "cameraId")]
+    camera_id: Option<String>,
+
+    #[serde(rename = "cameraIds")]
+    camera_ids: Vec<String>,
+
+    #[serde(rename = "countPhotos")]
+    count_photos: i64,
+
+    #[serde(rename = "photos")]
+    photos: Vec<Option<serde_json::Value>>,
+}
+
+#[derive(Serialize, Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct PhotosResponse {
+    #[serde(rename = "photos")]
+    photos: Vec<Photo>,
+
+    #[serde(rename = "cameraId")]
+    camera_id: Option<serde_json::Value>,
+
+    #[serde(rename = "cameraIds")]
+    camera_ids: Vec<String>,
+
+    #[serde(rename = "countPhotos")]
+    count_photos: i64,
+}
+
+#[derive(Serialize, Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Photo {
+    #[serde(rename = "id")]
+    id: String,
+
+    #[serde(rename = "date")]
+    date: String,
+
+    #[serde(rename = "tag")]
+    tag: Vec<String>,
+
+    #[serde(rename = "originName")]
+    origin_name: String,
+
+    #[serde(rename = "originSize")]
+    origin_size: i64,
+
+    #[serde(rename = "originDate")]
+    origin_date: String,
+
+    #[serde(rename = "small")]
+    small: Hd,
+
+    #[serde(rename = "medium")]
+    medium: Hd,
+
+    #[serde(rename = "large")]
+    large: Hd,
+
+    #[serde(rename = "camera")]
+    camera: String,
+
+    #[serde(rename = "hd")]
+    hd: Hd,
+}
+
+#[derive(Serialize, Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Hd {
+    #[serde(rename = "verb")]
+    verb: String,
+
+    #[serde(rename = "path")]
+    path: String,
+
+    #[serde(rename = "host")]
+    host: String,
+
+    #[serde(rename = "headers")]
+    headers: Vec<Header>,
+}
+
+#[derive(Serialize, Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Header {
+    #[serde(rename = "name")]
+    name: String,
+
+    #[serde(rename = "value")]
+    value: String,
+}
+
+/// photos returns list of photo for a camera.
+pub(crate) async fn photos(client: &Client, camera_id:String) -> Result<PhotosResponse> {
+
+    let req = PhotosRequest{
+        camera_id: Some(camera_id),
+        camera_ids: vec![],
+        count_photos:0,
+        photos:vec![]
+    };
+
+    let response = client.send_request(&req,Method::POST, PATH_PHOTOS,true).await?;
+
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -522,7 +654,7 @@ mod tests {
     const CAMERA_RESPONSE: &str = r#"
     {
     "activationDate": "2020-07-19T14:37:35.058Z",
-    "config": {
+    "Config": {
     "batteryType": "AA",
     "capture": false,
     "captureMode": "photo",
@@ -666,7 +798,7 @@ mod tests {
     const ALL_CAMERAS_RESPONSE: &str = r#"[
   {
     "activationDate": "2020-07-19T14:37:35.058Z",
-    "config": {
+    "Config": {
       "batteryType": "AA",
       "capture": false,
       "captureMode": "photo",

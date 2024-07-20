@@ -101,7 +101,7 @@ impl Client {
 
     pub fn server(&self) -> String {
         let lock = self.inner.lock().unwrap();
-            lock.server.clone()
+        lock.server.clone()
     }
 
     pub fn set_uuid(&self, uid:String) {
@@ -116,7 +116,7 @@ impl Client {
 
     pub fn set_auth(&self, token:String) {
         let mut lock = self.inner.lock().unwrap();
-       lock.auth_token = token.clone();
+        lock.auth_token = token.clone();
     }
 
     pub fn auth_token(&self) -> String {
@@ -168,37 +168,37 @@ impl Client {
     }
 
     pub async fn send_request<R: Serialize + Debug, P: DeserializeOwned + Debug>(
-    &self,
-    req: &R,
-    method:Method,
-    path: &str,
-    include_auth: bool,
+        &self,
+        req: &R,
+        method:Method,
+        path: &str,
+        include_auth: bool,
     ) -> Result<P> {
-            let url = format!("{}{}", self.server(), path);
+        let url = format!("{}{}", self.server(), path);
 
-            debug!("client request: {:?}", req);
+        debug!("client request: {:?}", req);
 
-            let mut builder = self
-                .http_client()
-                .request(method, url);
+        let mut builder = self
+            .http_client()
+            .request(method, url);
 
-            if include_auth {
-                builder = builder.bearer_auth(self.auth_token());
-            }
+        if include_auth {
+            builder = builder.bearer_auth(self.auth_token());
+        }
 
-           let result=builder
-                .json(req)
-                .send()
-                .await?;
+        let result=builder
+            .json(req)
+            .send()
+            .await?;
 
-            if result.status() != StatusCode::OK {
-                return Err(self.retrieve_error(result).await);
-            }
+        if result.status() != StatusCode::OK {
+            return Err(self.retrieve_error(result).await);
+        }
 
-            debug!("client got response: {:?}", result);
+        debug!("client got response: {:?}", result);
 
-            let response = result.json::<P>().await?;
+        let response = result.json::<P>().await?;
 
-            Ok(response)
+        Ok(response)
     }
 }

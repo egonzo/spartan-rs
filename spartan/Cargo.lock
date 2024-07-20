@@ -1741,7 +1741,7 @@ checksum = "c597637d56fbc83893a35eb0dd04b2b8e7a50c91e64e9493e398b5df4fb45fa2"
 dependencies = [
  "cc",
  "libc",
- "pkg-config",
+ "pkg-Config",
  "vcpkg",
 ]
 
@@ -1858,7 +1858,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pkg-config"
+name = "pkg-Config"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
