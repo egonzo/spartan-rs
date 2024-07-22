@@ -1,31 +1,34 @@
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
+
 use crate::client::Client;
 use crate::Result;
 
-pub(crate) const PATH_LOGIN:&str = "/api/v3/user/login";
-pub(crate) const PATH_CAMERAS_ALL: &str = "/api/v3/camera/all";
-pub(crate) const PATH_CAMERA :&str ="/api/v3/camera/";
-pub(crate) const PATH_PHOTOS: &str = "/api/v3/photos/all";
+pub const PATH_LOGIN: &str = "/api/v3/user/login";
+pub const PATH_CAMERAS_ALL: &str = "/api/v3/camera/all";
+pub const PATH_CAMERA: &str = "/api/v3/camera/";
+pub const PATH_PHOTOS: &str = "/api/v3/photos/all";
 
 // **** Login
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 #[serde(default)]
 pub struct Login {
-    pub username:String,
-    pub password:String,
+    pub username: String,
+    pub password: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 #[serde(default)]
 pub struct LoginResponse {
-    uuid:String,
-    token:String,
+    uuid: String,
+    token: String,
 }
 
 /// Login logs in to the api. If successful it sets the auth token and uuid on the client.
 pub async fn login(client: &Client, login: Login) -> Result<()> {
-    let result:LoginResponse = client.send_request(&login, Method::POST, PATH_LOGIN, false).await?;
+    let result: LoginResponse = client
+        .send_request(&login, Method::POST, PATH_LOGIN, false)
+        .await?;
 
     client.set_auth(result.token);
     client.set_uuid(result.uuid);
@@ -273,7 +276,7 @@ pub struct Signal {
     signal_type: String,
 
     #[serde(rename = "processed")]
-   pub processed: Processed,
+    pub processed: Processed,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
@@ -395,15 +398,15 @@ pub struct Plan {
 }
 
 pub async fn cameras(client: &Client) -> Result<Cameras> {
-    let result:Cameras = client.get_request(PATH_CAMERAS_ALL, true).await?;
+    let result: Cameras = client.get_request(PATH_CAMERAS_ALL, true).await?;
 
     Ok(result)
 }
 
 pub async fn camera(client: &Client, camera_id: String) -> Result<Camera> {
-    let path = format!("{}{}",PATH_CAMERA, camera_id);
+    let path = format!("{}{}", PATH_CAMERA, camera_id);
 
-    let result:Camera = client.get_request(path.as_str(), true).await?;
+    let result: Camera = client.get_request(path.as_str(), true).await?;
 
     Ok(result)
 }
@@ -413,109 +416,108 @@ pub async fn camera(client: &Client, camera_id: String) -> Result<Camera> {
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct PhotosRequest {
-    #[serde(rename = "cameraId")]
-    camera_id: Option<String>,
+    #[serde(rename = "camera")]
+    camera: Vec<String>,
 
-    #[serde(rename = "cameraIds")]
-    camera_ids: Vec<String>,
+    #[serde(rename = "dateEnd")]
+    date_end: String,
 
-    #[serde(rename = "countPhotos")]
-    count_photos: i64,
+    #[serde(rename = "mediaType")]
+    media_type: Vec<String>,
 
-    #[serde(rename = "photos")]
-    photos: Vec<Option<serde_json::Value>>,
+    #[serde(rename = "species")]
+    species: Vec<String>,
+
+    #[serde(rename = "limit")]
+    limit: i64,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct PhotosResponse {
     #[serde(rename = "photos")]
-    photos: Vec<Photo>,
+    pub photos: Vec<Photo>,
 
     #[serde(rename = "cameraId")]
-    camera_id: Option<serde_json::Value>,
+    pub camera_id: Option<serde_json::Value>,
 
     #[serde(rename = "cameraIds")]
-    camera_ids: Vec<String>,
+    pub camera_ids: Vec<String>,
 
     #[serde(rename = "countPhotos")]
-    count_photos: i64,
+    pub count_photos: i64,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Photo {
     #[serde(rename = "id")]
-    id: String,
-
+    pub id: String,
     #[serde(rename = "date")]
-    date: String,
-
+    pub date: String,
     #[serde(rename = "tag")]
-    tag: Vec<String>,
-
+    pub tag: Vec<String>,
     #[serde(rename = "originName")]
-    origin_name: String,
-
+    pub origin_name: String,
     #[serde(rename = "originSize")]
-    origin_size: i64,
-
+    pub origin_size: i64,
     #[serde(rename = "originDate")]
-    origin_date: String,
-
+    pub origin_date: String,
     #[serde(rename = "small")]
-    small: Hd,
-
+    pub small: Hd,
     #[serde(rename = "medium")]
-    medium: Hd,
-
+    pub medium: Hd,
     #[serde(rename = "large")]
-    large: Hd,
-
+    pub large: Hd,
     #[serde(rename = "camera")]
-    camera: String,
-
+    pub camera: String,
     #[serde(rename = "hd")]
-    hd: Hd,
+    pub hd: Hd,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Hd {
     #[serde(rename = "verb")]
-    verb: String,
+    pub verb: String,
 
     #[serde(rename = "path")]
-    path: String,
+    pub path: String,
 
     #[serde(rename = "host")]
-    host: String,
+    pub host: String,
 
     #[serde(rename = "headers")]
-    headers: Vec<Header>,
+    pub headers: Vec<Header>,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Header {
     #[serde(rename = "name")]
-    name: String,
+    pub name: String,
 
     #[serde(rename = "value")]
-    value: String,
+    pub value: String,
 }
 
 /// photos returns list of photo for a camera.
-pub(crate) async fn photos(client: &Client, camera_id:String) -> Result<PhotosResponse> {
-
-    let req = PhotosRequest{
-        camera_id: Some(camera_id),
-        camera_ids: vec![],
-        count_photos:0,
-        photos:vec![]
+pub async fn camera_photos(
+    client: &Client,
+    camera_id: String,
+    limit: Option<i64>,
+) -> Result<PhotosResponse> {
+    let req = PhotosRequest {
+        camera: vec![camera_id],
+        limit: limit.unwrap_or(125),
+        date_end: String::from("2100-01-01T00:00:00.000Z"),
+        media_type: vec![],
+        species: vec![],
     };
 
-    let response = client.send_request(&req,Method::POST, PATH_PHOTOS,true).await?;
+    let response = client
+        .send_request(&req, Method::POST, PATH_PHOTOS, true)
+        .await?;
 
     Ok(response)
 }
@@ -523,6 +525,7 @@ pub(crate) async fn photos(client: &Client, camera_id:String) -> Result<PhotosRe
 #[cfg(test)]
 mod tests {
     use httpmock::prelude::*;
+
     use crate::{client, spypoint};
     use crate::client::Server;
     use crate::spypoint::{Login, LoginResponse, PATH_CAMERA, PATH_CAMERAS_ALL, PATH_LOGIN};
@@ -552,7 +555,7 @@ mod tests {
 
         let l = Login {
             username: client.user(),
-            password: client.user_password()
+            password: client.user_password(),
         };
 
         tokio_test::block_on(async {
@@ -580,8 +583,7 @@ mod tests {
         let path = format!("{}{}", PATH_CAMERA, camera_id);
 
         let login_mock = mock_server.mock(|when, then| {
-            when.method(GET).path(path)
-                .header("Authorization", auth);
+            when.method(GET).path(path).header("Authorization", auth);
             then.status(200).body(CAMERA_RESPONSE);
         });
 
@@ -619,7 +621,8 @@ mod tests {
         let auth = format!("Bearer {}", resp.token);
 
         let login_mock = mock_server.mock(|when, then| {
-            when.method(GET).path(PATH_CAMERAS_ALL)
+            when.method(GET)
+                .path(PATH_CAMERAS_ALL)
                 .header("Authorization", auth);
             then.status(200).body(ALL_CAMERAS_RESPONSE);
         });

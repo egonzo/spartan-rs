@@ -68,7 +68,7 @@ struct ClientInner {
 
 impl Client {
     pub fn new(server: Server) -> Result<Self> {
-        let user_agent = format!("{}", USER_AGENT);
+        let user_agent =  String::from(USER_AGENT);
 
         let http = ClientBuilder::new()
             .connect_timeout(Duration::new(15, 0))
@@ -106,7 +106,7 @@ impl Client {
 
     pub fn set_uuid(&self, uid:String) {
         let mut lock = self.inner.lock().unwrap();
-        lock.uuid = uid.clone();
+        lock.uuid.clone_from(&uid);
     }
 
     pub fn uuid(&self) -> String {
@@ -116,7 +116,7 @@ impl Client {
 
     pub fn set_auth(&self, token:String) {
         let mut lock = self.inner.lock().unwrap();
-        lock.auth_token = token.clone();
+        lock.auth_token.clone_from(&token);
     }
 
     pub fn auth_token(&self) -> String {

@@ -1,71 +1,73 @@
-use mongodb::bson;
 use bson::DateTime;
+use mongodb::{bson, Collection, Database};
+use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
+
 use crate::spypoint;
 
 pub mod pictures;
 
-const CAMERA_COLLECTION:&str = "cameras";
+const COLLECTION: &str = "cameras";
 
-#[derive(Serialize, Deserialize,  Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Status {
     last_transmission_timestamp: i64,
     #[serde(serialize_with = "bson::serde_helpers::serialize_bson_datetime_as_rfc3339_string")]
-    last_transmission:DateTime,
+    last_transmission: DateTime,
     memory: f64,
     temperature: f64,
-    memory_limit:f64,
+    memory_limit: f64,
     signal: i64,
-    battery_level:i64
+    battery_level: i64,
 }
 
-#[derive(Serialize, Deserialize,  Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GPS {
     #[serde(serialize_with = "bson::serde_helpers::serialize_bson_datetime_as_rfc3339_string")]
-    last_updated_timestamp:DateTime,
-    longitude:String,
+    last_updated_timestamp: DateTime,
+    longitude: String,
     latitude: String,
 }
 
-#[derive(Serialize, Deserialize,  Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Usage {
-    stored_photos:i64,
-    photos:i64,
+    stored_photos: i64,
+    photos: i64,
 }
 
-#[derive(Serialize, Deserialize,  Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Camera {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<bson::oid::ObjectId>,
     pub camera_id: String,
-    pub name:String,
+    pub name: String,
     pub r#type: String,
     pub updated_by: String,
     #[serde(serialize_with = "bson::serde_helpers::serialize_bson_datetime_as_rfc3339_string")]
     pub last_updated_timestamp: DateTime,
-    pub registration_status:String,
+    pub registration_status: String,
     pub created_timestamp: String,
-    pub usage:Usage,
-    pub status_file:String,
-    pub phone_carrier:String,
-    pub account_id:String,
+    pub usage: Usage,
+    pub status_file: String,
+    pub phone_carrier: String,
+    pub account_id: String,
     #[serde(rename = "iccid")]
-    pub icc_id:String,
-    pub hardware_version:String,
-    pub location:String,
-    pub firmware_version:String,
-    pub status:Status,
-    pub photo_count:i64,
-    pub sd_card:String,
-    pub gps:GPS,
-    pub zip: String
+    pub icc_id: String,
+    pub hardware_version: String,
+    pub location: String,
+    pub firmware_version: String,
+    pub status: Status,
+    pub photo_count: i64,
+    pub sd_card: String,
+    pub gps: GPS,
+    pub zip: String,
 }
 
 impl From<spypoint::Camera> for Camera {
     fn from(value: spypoint::Camera) -> Self {
-
         // last update
-        let last_update = bson::DateTime::parse_rfc3339_str(value.status.last_update).unwrap_or(bson::DateTime::now());
+        let last_update = bson::DateTime::parse_rfc3339_str(value.status.last_update)
+            .unwrap_or(bson::DateTime::now());
 
         // Subscription
         let subscription = value.subscriptions.into_iter().next();
@@ -81,9 +83,9 @@ impl From<spypoint::Camera> for Camera {
         let batteries = value.status.batteries.into_iter().next().unwrap_or(0);
 
         let status = Status {
-            last_transmission_timestamp:0, //Redo
-            last_transmission:last_update.clone(),
-            memory:value.status.memory.used as f64,
+            last_transmission_timestamp: 0, //Redo
+            last_transmission: last_update,
+            memory: value.status.memory.used as f64,
             temperature: value.status.temperature.value as f64,
             memory_limit: value.status.memory.size as f64,
             signal: value.status.signal.processed.bar,
@@ -93,40 +95,40 @@ impl From<spypoint::Camera> for Camera {
         let mut lat = 0.00;
         let mut lng = 0.00;
 
-        if value.status.coordinates.len() > 0 {
-                if value.status.coordinates[0].position.coordinates.len() == 2 {
-                    lat =value.status.coordinates[0].position.coordinates[1];
-                    lng = value.status.coordinates[0].position.coordinates[0];
-                }
+        if !value.status.coordinates.is_empty()
+            && value.status.coordinates[0].position.coordinates.len() == 2
+        {
+            lat = value.status.coordinates[0].position.coordinates[1];
+            lng = value.status.coordinates[0].position.coordinates[0];
         }
 
         let gps = GPS {
-            last_updated_timestamp:last_update,
-            latitude:lat.to_string(),
-            longitude:lng.to_string(),
+            last_updated_timestamp: last_update,
+            latitude: lat.to_string(),
+            longitude: lng.to_string(),
         };
 
         let usage = Usage {
-            stored_photos:photo_count,
-            photos:photo_count,
+            stored_photos: photo_count,
+            photos: photo_count,
         };
 
         Camera {
             id: None,
-            camera_id:value.id,
-            name:value.config.clone().name,
-            r#type:String::from("spypoint"),
-            updated_by:String::from(""),
+            camera_id: value.id,
+            name: value.config.clone().name,
+            r#type: String::from("spypoint"),
+            updated_by: String::from(""),
             last_updated_timestamp: last_update,
-            registration_status:reg_status.clone(),
+            registration_status: reg_status.clone(),
             created_timestamp: value.activation_date,
             status_file: String::from(""),
-            phone_carrier:String::from(""),
-            account_id:value.user,
-            icc_id:value.ucid,
-            hardware_version:value.status.version,
-            location:value.config.name,
-            firmware_version:value.status.modem_firmware,
+            phone_carrier: String::from(""),
+            account_id: value.user,
+            icc_id: value.ucid,
+            hardware_version: value.status.version,
+            location: value.config.name,
+            firmware_version: value.status.modem_firmware,
             status,
             photo_count,
             usage,
@@ -137,10 +139,27 @@ impl From<spypoint::Camera> for Camera {
     }
 }
 
+impl Camera {
+    pub async fn save(&self, db: &Database) -> crate::Result<()> {
+        let coll: Collection<Camera> = db.collection(COLLECTION);
+        let filter = doc! {
+            "camera_id": &self.camera_id,
+        };
+
+        let _res = coll
+            .find_one_and_update(filter, bson::to_document(self).unwrap_or(doc! {}))
+            .upsert(true)
+            .await?;
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use mongodb::bson;
     use serde_json;
+
     use crate::cameras::Camera;
     use crate::spypoint;
 
@@ -159,8 +178,7 @@ mod tests {
         println!("{json}");
     }
 
-
-const SPY_CAMERA_JSON:&str= r#"{
+    const SPY_CAMERA_JSON: &str = r#"{
     "activationDate": "2024-07-17T23:43:19.162Z",
     "config": {
       "batteryType": "AUTO",
