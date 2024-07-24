@@ -3,17 +3,18 @@ use std::io::Cursor;
 use bytes::Bytes;
 use chrono::Datelike;
 use image;
-use image::RgbaImage;
+use image::{ImageFormat, RgbImage};
+use image::codecs::jpeg::JpegEncoder;
+use image::imageops::FilterType;
 use log::error;
 use mongodb::{bson, Collection, Database};
 use mongodb::bson::{DateTime, doc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use thumbnailer::create_thumbnails;
-use thumbnailer::ThumbnailSize::Custom;
 
 use crate::spypoint::Photo;
 use crate::sys::gdrive;
+use crate::sys::gdrive::GCPClient;
 
 const COLLECTION: &str = "pictures";
 
@@ -91,20 +92,30 @@ impl From<Photo> for Picture {
 }
 
 impl Picture {
-    pub async fn save(&self, db: Database) -> crate::Result<()> {
+    /// Saves a picture to the database
+    ///
+    /// Arguments:
+    ///
+    /// db: MongoDB database
+    pub async fn save(&self, db: &Database) -> crate::Result<()> {
         let coll: Collection<Picture> = db.collection(COLLECTION);
         let filter = doc! {
             "photo_id": &self.photo_id,
         };
 
         let _res = coll
-            .find_one_and_update(filter, bson::to_document(self).unwrap_or(doc! {}))
+            .find_one_and_update(filter, bson::to_document(self).unwrap_or_default())
             .upsert(true)
             .await?;
 
         Ok(())
     }
 
+    /// Determines whether a picture exists or not in the database.
+    ///
+    /// Arguments:
+    ///
+    /// db: MongoDB Database
     pub async fn exists(&self, db: &Database) -> crate::Result<bool> {
         let coll: Collection<Picture> = db.collection(COLLECTION);
         let filter = doc! {
@@ -117,16 +128,31 @@ impl Picture {
         }
     }
 
+    /// Downloads an image from the client provider.
+    ///
+    /// Arguments:
+    ///
+    /// client: The client provider from where to get the picture from.
     pub async fn download_image(&self, client: &Client) -> reqwest::Result<Bytes> {
         client.get(&self.photo_url).send().await?.bytes().await
     }
 
+    /// Uploads pictures to cloud storage. Generates a thumbnail of the picture and uploads that to
+    /// cloud storage as well. A new picture record is created in the database for the new picture.
+    ///
+    /// Arguments:
+    ///
+    /// db: MongoDB Database
+    /// client: Spypoint client used to download picture.
+    /// camera_name: The name of the camera that the picture belongs to.
+    /// gcp_client: Google cloud storage client.
+    /// gcp_bucket: The name of the bucket in cloud storage where the picture will be saved.
     pub async fn upload(
         &mut self,
-        db: Database,
+        db: &Database,
         client: &Client,
-        gcp_client: &cloud_storage::Client,
         camera_name: String,
+        gcp_client: &GCPClient,
         gcp_bucket: String,
     ) -> crate::Result<()> {
         // Download Pic
@@ -149,14 +175,14 @@ impl Picture {
         let img_path = format!("{}/{}.jpg", base_path, id.to_hex());
 
         // Save Image to cloud storage
-        if let Err(e) = gdrive::save_to_bucket(
-            gcp_client,
-            gcp_bucket.as_str(),
-            img_bytes.clone().to_vec(),
-            img_path.as_str(),
-            gdrive::MIME_JPEG,
-        )
-        .await
+        if let Err(e) = gcp_client
+            .save_to_bucket(
+                gcp_bucket.as_str(),
+                img_bytes.clone().to_vec(),
+                img_path.as_str(),
+                gdrive::MIME_JPEG,
+            )
+            .await
         {
             error!(
                 "pictures::upload, error uploading to cloud storage, {:?}",
@@ -166,25 +192,25 @@ impl Picture {
         };
 
         // Make Thumbnail
-        let thumb_bytes = match create_thumbnail(img_bytes) {
+        let thumb_bytes = match create_thumbnail(img_bytes.as_ref(), THUMB_WIDTH, THUMB_HEIGHT) {
             Ok(t) => t,
             Err(e) => {
-                error!("pictures::upload, error generating thumbbail, {:?}", e);
-                return Err(Box::from(e));
+                error!("pictures::upload, error generating thumbnail, {:?}", e);
+                return Err(e);
             }
         };
 
         let thumb_path = format!("{}/{}-thumb.jpg", base_path, id.to_hex());
 
         // Save Image to cloud storage
-        if let Err(e) = gdrive::save_to_bucket(
-            gcp_client,
-            gcp_bucket.as_str(),
-            thumb_bytes.clone(),
-            thumb_path.as_str(),
-            gdrive::MIME_JPEG,
-        )
-        .await
+        if let Err(e) = gcp_client
+            .save_to_bucket(
+                gcp_bucket.as_str(),
+                thumb_bytes.clone(),
+                thumb_path.as_str(),
+                gdrive::MIME_JPEG,
+            )
+            .await
         {
             error!(
                 "pictures::upload, error uploading to cloud storage, {:?}",
@@ -195,7 +221,12 @@ impl Picture {
 
         // Save Picture to DB.
         if let Err(e) = self.save(db).await {
-            // TODO: Handle Error
+            error!(
+                "pictures::upload, unable to save picture to Database, {:?}",
+                e
+            );
+
+            return Err(e);
         }
 
         Ok(())
@@ -205,26 +236,66 @@ impl Picture {
 const THUMB_WIDTH: u32 = 400;
 const THUMB_HEIGHT: u32 = 400;
 
-fn create_thumbnail(bytes: Bytes) -> crate::Result<Vec<u8>> {
-    let reader = Cursor::new(bytes.to_vec());
-    let thumb = match create_thumbnails(
-        reader,
-        mime::IMAGE_JPEG,
-        [Custom((THUMB_WIDTH, THUMB_HEIGHT))],
-    ) {
-        Ok(mut t) => t.pop(),
+/// Resizes the image represented by the bytes parameters to the size (width and height) parameters.
+pub fn create_thumbnail(bytes: &[u8], width: u32, height: u32) -> crate::Result<Vec<u8>> {
+    let img = match image::load_from_memory_with_format(bytes, ImageFormat::Jpeg) {
+        Ok(t) => t,
         Err(e) => {
-            return Err(Box::from(e));
+            error!(
+                "pictures::create_thumbnail, error generating thumbnail, {:?}",
+                e
+            );
+            return basic_thumbnail(width, height);
         }
     };
 
-    if let Some(x) = thumb {
-        let mut buf = Cursor::new(Vec::new());
-        let _ = x.write_jpeg(&mut buf, 100).unwrap_or(());
+    let thumb = img.resize(width, height, FilterType::Triangle);
 
-        return Ok(buf.into_inner());
+    let mut cursor = Cursor::new(Vec::new());
+    let encoder = JpegEncoder::new_with_quality(&mut cursor, 95);
+
+    thumb.write_with_encoder(encoder)?;
+    Ok(cursor.into_inner())
+}
+
+/// Returns a black jpeg image based on the width and height parameters passed it.
+pub fn basic_thumbnail(width: u32, height: u32) -> crate::Result<Vec<u8>> {
+    let mut image = RgbImage::new(width, height);
+    image.fill(0);
+
+    let mut cursor = Cursor::new(Vec::new());
+    let encoder = JpegEncoder::new_with_quality(&mut cursor, 95);
+    image.write_with_encoder(encoder)?;
+    Ok(cursor.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::File;
+    use std::io::{BufReader, Read, Write};
+
+    use crate::cameras::pictures::{basic_thumbnail, create_thumbnail, THUMB_HEIGHT, THUMB_WIDTH};
+
+    #[test]
+    fn basic_create_thumbnail() {
+        let mut buf = BufReader::new(File::open("buck77.jpg").unwrap());
+        let mut buffer = Vec::new();
+        buf.read_to_end(&mut buffer).expect("File to be read");
+
+        assert!(buffer.len() > 0);
+        let output = create_thumbnail(buffer.as_slice(), THUMB_WIDTH, THUMB_HEIGHT).expect("Image");
+
+        assert!(output.len() > 0);
+        let mut file = File::create("thumb.jpg").expect("File to be created");
+        file.write_all(&output)
+            .expect("Thumbnail Image to be saved");
     }
 
-    let image = RgbaImage::new(THUMB_WIDTH, THUMB_HEIGHT);
-    Ok(image.to_vec())
+    #[test]
+    fn black_thumbnail() {
+        let bytes = basic_thumbnail(THUMB_WIDTH, THUMB_HEIGHT).expect("Black Thumbnail");
+        assert!(bytes.len() > 0);
+        let mut file = File::create("thumb_black.jpg").expect("File to be created");
+        file.write_all(&bytes).expect("Thumbnail Image to be saved");
+    }
 }

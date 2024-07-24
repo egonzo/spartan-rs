@@ -20,11 +20,11 @@ pub struct SyncError {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SyncResult {
-    date: DateTime,
-    camera_id: String,
-    camera_name: String,
-    location: String,
-    uploaded: i64,
-    skipped: i64,
-    errors: i64,
+    pub date: DateTime,
+    pub camera_id: String,
+    pub camera_name: String,
+    pub location: String,
+    pub uploaded: i64,
+    pub skipped: i64,
+    pub errors: i64,
 }

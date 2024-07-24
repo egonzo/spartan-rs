@@ -9,5 +9,5 @@ pub mod sync;
 pub fn sub_date(date: SystemTime, days: u64) -> SystemTime {
     let duration = Duration::from_secs(days * (60 * 60 * 24));
 
-    date.checked_sub(duration).unwrap_or_else(|| date)
+    date.checked_sub(duration).unwrap_or(date)
 }

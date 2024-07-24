@@ -98,7 +98,7 @@ pub struct Config {
     multi_shot: i64,
 
     #[serde(rename = "name")]
-    pub(crate) name: String,
+    pub name: String,
 
     #[serde(rename = "operationMode")]
     operation_mode: String,

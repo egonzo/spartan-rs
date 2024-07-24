@@ -16,9 +16,8 @@ log = "0.4.22"
 cloud-storage = "0.11"
 bytes = "1"
 chrono = "0.4"
-thumbnailer = "0.5"
 mime = "0.3.17"
-image = "0.24.9"
+image = "0.25"
 
 [dev-dependencies]
 tokio-test = "0.4"

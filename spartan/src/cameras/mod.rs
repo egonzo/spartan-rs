@@ -147,7 +147,7 @@ impl Camera {
         };
 
         let _res = coll
-            .find_one_and_update(filter, bson::to_document(self).unwrap_or(doc! {}))
+            .find_one_and_update(filter, bson::to_document(self).unwrap_or_default())
             .upsert(true)
             .await?;
 

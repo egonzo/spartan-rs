@@ -1,15 +1,16 @@
 use std::{env, process};
-use std::thread::sleep;
 use std::time::Duration;
 
 use log::{error, info};
-use mongodb::bson::doc;
+use mongodb::bson::{DateTime, doc};
 
 use spartan::{client, spypoint, sys, sys::mgo};
 use spartan::cameras::Camera;
 use spartan::cameras::pictures::Picture;
 use spartan::client::Server;
 use spartan::spypoint::Login;
+use spartan::sys::gdrive::GCPClient;
+use spartan::sys::sync::SyncResult;
 
 pub mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
@@ -44,13 +45,18 @@ async fn main() {
     // Load Config
     let config = Config::from_env();
 
-    // Spypoint
+    // Load GCP Client
+    // It loads the GCP JSON Key from the env. See GCPClient for more details.
+    let gcp_client = GCPClient::default();
+
+    // Spypoint Server
     let server = Server {
         user_name: config.spypoint_user,
         password: config.spypoint_pwd,
         host: config.spypoint_host,
     };
 
+    // New Spypoint client
     let client = client::Client::new(server).expect("spypoint client");
 
     // Login
@@ -82,11 +88,32 @@ async fn main() {
 
     // loop through cameras.
     for camera in cameras {
+        info!(
+            "sync::main processing camera, {}...",
+            camera.config.name.clone()
+        );
+
+        let mut sync_result = SyncResult {
+            date: DateTime::now(),
+            camera_id: camera.id.clone(),
+            camera_name: camera.config.name.clone(),
+            location: camera.config.name.clone(),
+            uploaded: 0,
+            skipped: 0,
+            errors: 0,
+        };
+
+        // Loads camera details
         let camera_detail = match spypoint::camera(&client, camera.clone().id).await {
             Ok(c) => c,
             Err(e) => {
-                // TODO: Handle Error, Slack
-                // TODO:
+                error!(
+                    "sync::main getting camera detail, {}...{:?}",
+                    camera.config.name.clone(),
+                    e
+                );
+
+                // TODO: Slack
                 continue;
             }
         };
@@ -96,7 +123,13 @@ async fn main() {
         match spartan_camera.save(&db).await {
             Ok(()) => {}
             Err(e) => {
-                // TODO: Handle Error, Slack
+                error!(
+                    "sync::main saving camera, {}...{:?}",
+                    camera.config.name.clone(),
+                    e
+                );
+                // TODO: Slack
+                continue;
             }
         }
 
@@ -107,7 +140,14 @@ async fn main() {
         let photo_response = match spypoint::camera_photos(&client, camera.id, Some(125)).await {
             Ok(p) => p,
             Err(e) => {
-                // TODO: Handle Error, slack
+                error!(
+                    "sync::main retrieving photos for camera, {}...{:?}",
+                    camera.config.name.clone(),
+                    e
+                );
+                sync_result.errors += 1;
+                // TODO: Slack
+
                 continue;
             }
         };
@@ -119,14 +159,14 @@ async fn main() {
             let pic_date = picture.date.to_system_time();
             let cutoff = sys::sub_date(pic_date, DAYS_OF_PICS);
             if cutoff > pic_date {
-                // TODO: Increment Skipped
+                sync_result.skipped += 1;
                 continue;
             }
 
             // check DB to see if pic exists.
             if let Ok(x) = picture.exists(&db).await {
                 if x {
-                    // TODO: Increment skip
+                    sync_result.skipped += 1;
                     continue;
                 }
             }
@@ -134,16 +174,41 @@ async fn main() {
             // Set fields
             picture.account_id = spartan_camera.clone().account_id;
 
-            // Save to Bucket
+            // Download Pic, Save to Cloud Storage, Gen Thumbnail, Save thumb to Cloud storage
+            // and save Pic to db.
+            if let Err(e) = picture
+                .upload(
+                    &db,
+                    &client.http_client(),
+                    picture.location.clone(),
+                    &gcp_client,
+                    config.gcp_bucket.clone(),
+                )
+                .await
+            {
+                error!(
+                    "sync::main upload photo with date {} for camera, {}...{:?}",
+                    picture.picture_date,
+                    camera.config.name.clone(),
+                    e
+                );
+                sync_result.errors += 1;
+                // TODO: Slack
 
-            // Generate Thumbnail
+                continue;
+            }
 
-            // Save Thumbnail
-
-            // Update Sync Counts.
+            // Sleep Thread?
+            // tokio::time::sleep(Duration::new(2, 0)).await;
+            sync_result.uploaded += 1;
         }
 
-        // Save Sync Metrics for Camera.
+        info!(
+            "sync::main processing camera, {}, complete",
+            camera.config.name.clone()
+        );
+
+        // TODO: Save Sync Metrics for Camera.
 
         // Sleep Thread
         tokio::time::sleep(Duration::new(2, 0)).await;
