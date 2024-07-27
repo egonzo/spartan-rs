@@ -10,9 +10,9 @@ impl Default for GCPClient {
     /// Creates a new client by calling Default on the inner client.
     ///
     /// Checks for the environment variable SERVICE_ACCOUNT, and if it exists, reads the file at the path specified there as a credentials json file.
-    /// It attemps to do the same with the GOOGLE_APPLICATION_CREDENTIALS var.
+    /// It attempts to do the same with the GOOGLE_APPLICATION_CREDENTIALS var.
     /// It reads the SERVICE_ACCOUNT_JSON environment variable directly as json and uses that
-    /// It attemps to do the same with the GOOGLE_APPLICATION_CREDENTIALS_JSON var.
+    /// It attempts to do the same with the GOOGLE_APPLICATION_CREDENTIALS_JSON var.
     ///
     /// GOOGLE_APPLICATION_CREDENTIALS_JSON will contain the JSON.
     fn default() -> Self {

@@ -1,3 +1,5 @@
+use bson::doc;
+use mongodb::{Collection, Database};
 use mongodb::bson::DateTime;
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +22,7 @@ pub struct SyncError {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SyncResult {
+    #[serde(serialize_with = "bson::serde_helpers::serialize_bson_datetime_as_rfc3339_string")]
     pub date: DateTime,
     pub camera_id: String,
     pub camera_name: String,
@@ -27,4 +30,13 @@ pub struct SyncResult {
     pub uploaded: i64,
     pub skipped: i64,
     pub errors: i64,
+}
+
+impl SyncResult {
+    pub async fn save(&self, db: &Database) -> crate::Result<()> {
+        let coll: Collection<SyncResult> = db.collection(SYNC_COLLECTION);
+        coll.insert_one(self).await?;
+
+        Ok(())
+    }
 }
