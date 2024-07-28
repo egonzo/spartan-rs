@@ -4,14 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dotenvy = "0.15.7"
-env_logger = "0.11.3"
-mongodb = "3.0.0"
-reqwest = { version = "0.12.5", features = ["json", "stream"] }
-serde = { version = "1.0.203", features=["derive"] }
-serde_json = { version = "1.0.119",features = ["std"] }
-tokio = { version = "1.38.0"  ,features = ["full"]}
-log = "0.4.22"
+dotenvy = { workspace = true }
+bson = { workspace = true }
+mongodb = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+cloud-storage = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+image = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

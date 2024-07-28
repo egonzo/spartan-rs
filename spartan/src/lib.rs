@@ -1,6 +1,7 @@
-mod spypoint;
-mod client;
-
+pub mod spypoint;
+pub mod client;
+pub mod sys;
+pub mod cameras;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 

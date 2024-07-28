@@ -1,6 +1,19 @@
 [package]
-name = "sync"
+name = "sync-rs"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+env_logger = { workspace = true }
+mongodb = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+spartan = { path = "../spartan" }
+
+[dev-dependencies]
+tokio-test = "0.4"
+tokio = { version = "1.37", features = ["full"] }
+httpmock = "0.7"
+
+[build-dependencies]
+built = "0.7"
