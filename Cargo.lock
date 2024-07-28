@@ -3282,7 +3282,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sync"
+name = "sync-rs"
 version = "0.1.0"
 dependencies = [
  "built",
