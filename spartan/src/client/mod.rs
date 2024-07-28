@@ -1,15 +1,19 @@
-use crate::Result;
-use reqwest::{ClientBuilder, Response, StatusCode};
-use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use std::{env, fmt};
 use std::fmt::Debug;
-use reqwest::Method;
-use serde::de::DeserializeOwned;
-use log::debug;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-pub const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:126.0) Gecko/20100101";
+use log::debug;
+use reqwest::{ClientBuilder, Response, StatusCode};
+use reqwest::Method;
+use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde_json;
+
+use crate::Result;
+
+pub const USER_AGENT: &str =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:126.0) Gecko/20100101";
 
 /// The base error that is returned from the API calls.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -38,7 +42,11 @@ pub struct Server {
 
 impl Server {
     pub fn new(user_name: String, password: String, host: String) -> Self {
-        Self { user_name, password, host }
+        Self {
+            user_name,
+            password,
+            host,
+        }
     }
 
     pub fn from_env() -> Result<Self> {
@@ -68,7 +76,7 @@ struct ClientInner {
 
 impl Client {
     pub fn new(server: Server) -> Result<Self> {
-        let user_agent =  String::from(USER_AGENT);
+        let user_agent = String::from(USER_AGENT);
 
         let http = ClientBuilder::new()
             .connect_timeout(Duration::new(15, 0))
@@ -81,9 +89,9 @@ impl Client {
             server: server.host,
             http_client: http,
             user: server.user_name,
-            pwd:server.password,
-            auth_token:String::new(),
-            uuid:String::new(),
+            pwd: server.password,
+            auth_token: String::new(),
+            uuid: String::new(),
         }));
 
         Ok(Self { inner })
@@ -104,7 +112,7 @@ impl Client {
         lock.server.clone()
     }
 
-    pub fn set_uuid(&self, uid:String) {
+    pub fn set_uuid(&self, uid: String) {
         let mut lock = self.inner.lock().unwrap();
         lock.uuid.clone_from(&uid);
     }
@@ -114,7 +122,7 @@ impl Client {
         lock.uuid.clone()
     }
 
-    pub fn set_auth(&self, token:String) {
+    pub fn set_auth(&self, token: String) {
         let mut lock = self.inner.lock().unwrap();
         lock.auth_token.clone_from(&token);
     }
@@ -132,37 +140,43 @@ impl Client {
     pub async fn retrieve_error(&self, resp: Response) -> Box<dyn std::error::Error> {
         let code = resp.status().as_u16();
 
-        let mut err = match resp.json::<ApiError>().await {
+        let err = match resp.text().await {
             Ok(x) => x,
-            Err(e) => return Box::from(format!("error parsing error response, {}", e)),
+            Err(e) => return Box::from(format!("error retrieving error from response, {}", e)),
         };
 
-        err.http_status = code;
-        err.into()
+        Box::from(ApiError {
+            http_status: code,
+            error: err,
+        })
     }
 
-    pub async fn get_request<P: DeserializeOwned + Debug>(&self, path:&str, include_auth:bool) -> Result<P>{
+    pub async fn get_request<P: DeserializeOwned + Debug>(
+        &self,
+        path: &str,
+        include_auth: bool,
+    ) -> Result<P> {
         let url = format!("{}{}", self.server(), path);
 
-        let mut builder = self
-            .http_client()
-            .request(Method::GET, url);
+        let mut builder = self.http_client().request(Method::GET, url);
 
         if include_auth {
             builder = builder.bearer_auth(self.auth_token());
         }
 
-        let result=builder
-            .send()
-            .await?;
+        let result = builder.send().await?;
 
         if result.status() != StatusCode::OK {
             return Err(self.retrieve_error(result).await);
         }
 
-        debug!("client got response: {:?}", result);
+        let txt = result.text().await?;
+        debug!(
+            "client got response: {:?}",
+            serde_json::to_string_pretty(&txt)
+        );
 
-        let response = result.json::<P>().await?;
+        let response: P = serde_json::from_str(&txt)?;
 
         Ok(response)
     }
@@ -170,26 +184,19 @@ impl Client {
     pub async fn send_request<R: Serialize + Debug, P: DeserializeOwned + Debug>(
         &self,
         req: &R,
-        method:Method,
+        method: Method,
         path: &str,
         include_auth: bool,
     ) -> Result<P> {
         let url = format!("{}{}", self.server(), path);
 
-        debug!("client request: {:?}", req);
-
-        let mut builder = self
-            .http_client()
-            .request(method, url);
+        let mut builder = self.http_client().request(method, url);
 
         if include_auth {
             builder = builder.bearer_auth(self.auth_token());
         }
 
-        let result=builder
-            .json(req)
-            .send()
-            .await?;
+        let result = builder.json(req).send().await?;
 
         if result.status() != StatusCode::OK {
             return Err(self.retrieve_error(result).await);

@@ -1,12 +1,12 @@
 use std::io::Cursor;
 
 use bytes::Bytes;
-use chrono::Datelike;
+use chrono::{Datelike, Utc};
 use image;
 use image::{ImageFormat, RgbImage};
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
-use log::error;
+use log::{debug, error};
 use mongodb::{bson, Collection, Database};
 use mongodb::bson::{DateTime, doc};
 use reqwest::Client;
@@ -43,7 +43,7 @@ pub struct WeatherData {
 pub struct Picture {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<bson::oid::ObjectId>,
-    #[serde(serialize_with = "bson::serde_helpers::serialize_bson_datetime_as_rfc3339_string")]
+    #[serde(with = "bson::serde_helpers::bson_datetime_as_rfc3339_string")]
     pub date: DateTime,
     pub location: String,
     pub bucket: String,
@@ -54,9 +54,9 @@ pub struct Picture {
     pub is_favorite: bool,
     pub photo_id: String,
     pub account_id: String,
-    #[serde(serialize_with = "bson::serde_helpers::serialize_bson_datetime_as_rfc3339_string")]
+    #[serde(with = "bson::serde_helpers::bson_datetime_as_rfc3339_string")]
     pub last_updated: DateTime,
-    #[serde(serialize_with = "bson::serde_helpers::serialize_bson_datetime_as_rfc3339_string")]
+    #[serde(with = "bson::serde_helpers::bson_datetime_as_rfc3339_string")]
     pub created: DateTime,
     pub photo_time_stamp: String,
     pub photo_url: String,
@@ -78,7 +78,7 @@ impl From<Photo> for Picture {
             path: String::from(""),
             thumb_path: String::from(""),
             camera_id: value.camera,
-            picture_date: value.date.clone(),
+            picture_date: value.date,
             is_favorite: false,
             photo_id: value.id,
             account_id: String::from(""),
@@ -97,18 +97,21 @@ impl Picture {
     /// Arguments:
     ///
     /// db: MongoDB database
-    pub async fn save(&self, db: &Database) -> crate::Result<()> {
+    pub async fn insert(&self, db: &Database) -> crate::Result<()> {
         let coll: Collection<Picture> = db.collection(COLLECTION);
-        let filter = doc! {
-            "photo_id": &self.photo_id,
-        };
-
-        let _res = coll
-            .find_one_and_update(filter, bson::to_document(self).unwrap_or_default())
-            .upsert(true)
-            .await?;
+        let _ = coll.insert_one(self).await?;
 
         Ok(())
+    }
+
+    pub fn within_days(&self, days: i64) -> bool {
+        let pic_date = self.date.to_chrono();
+        let now = Utc::now();
+        let duration = now.signed_duration_since(pic_date);
+        let net_days = duration.num_days();
+
+        debug!("picture::within_days net_days {}", net_days);
+        net_days.abs() < days
     }
 
     /// Determines whether a picture exists or not in the database.
@@ -122,10 +125,23 @@ impl Picture {
             "photo_id": &self.photo_id,
         };
 
-        match coll.find_one(filter).await? {
-            Some(_) => Ok(true),
-            None => Ok(false),
+        debug!("pictures::exists, filter: {:?}", filter);
+        let res = match coll.find_one(filter).await {
+            Ok(x) => x,
+            Err(e) => {
+                error!(
+                    "pictures::exist error checking picture exists, photo_id: {}, error: {:?}",
+                    self.photo_id, e
+                );
+                return Err(Box::from(e));
+            }
+        };
+
+        if res.is_none() {
+            return Ok(false);
         }
+
+        Ok(true)
     }
 
     /// Downloads an image from the client provider.
@@ -158,6 +174,11 @@ impl Picture {
         // Download Pic
         let img_bytes = self.download_image(client).await?;
 
+        debug!(
+            "pictures::upload Picture Downloaded - {}",
+            self.picture_date
+        );
+
         // set id on Photo
         let id = bson::oid::ObjectId::new();
         self.id = Some(id);
@@ -173,6 +194,9 @@ impl Picture {
         );
 
         let img_path = format!("{}/{}.jpg", base_path, id.to_hex());
+
+        self.bucket.clone_from(&gcp_bucket);
+        self.path.clone_from(&img_path);
 
         // Save Image to cloud storage
         if let Err(e) = gcp_client
@@ -190,6 +214,12 @@ impl Picture {
             );
             return Err(Box::from(e));
         };
+
+        debug!(
+            "pictures::upload Picture uploaded to cloud storage - {} - {}",
+            self.picture_date,
+            self.id.unwrap_or_default().to_hex()
+        );
 
         // Make Thumbnail
         let thumb_bytes = match create_thumbnail(img_bytes.as_ref(), THUMB_WIDTH, THUMB_HEIGHT) {
@@ -219,8 +249,17 @@ impl Picture {
             return Err(Box::from(e));
         };
 
+        debug!(
+            "pictures::upload Picture thumbnail uploaded to cloud storage - {} - {}",
+            self.picture_date,
+            self.id.unwrap_or_default().to_hex()
+        );
+
+        self.thumb_path.clone_from(&thumb_path);
+        self.location.clone_from(&camera_name);
+
         // Save Picture to DB.
-        if let Err(e) = self.save(db).await {
+        if let Err(e) = self.insert(db).await {
             error!(
                 "pictures::upload, unable to save picture to Database, {:?}",
                 e

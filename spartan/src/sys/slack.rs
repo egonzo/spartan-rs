@@ -22,15 +22,21 @@ pub struct Field {
     value: String,
 }
 
-pub async fn save_error(client: reqwest::Client, url: String, msg: String) -> crate::Result<()> {
+pub async fn save_error(
+    client: reqwest::Client,
+    url: String,
+    msg: String,
+    title: String,
+) -> crate::Result<()> {
     if url.is_empty() {
         return Ok(());
     }
 
+    let t = format!("{} API Error", title);
     let m = Message {
         text: msg,
         attachments: vec![Attachment {
-            title: String::from("API Error"),
+            title: t,
             color: String::from("#f00"),
             ..Default::default()
         }],

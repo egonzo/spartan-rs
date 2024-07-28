@@ -1,3 +1,4 @@
+use log::debug;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +8,7 @@ use crate::Result;
 pub const PATH_LOGIN: &str = "/api/v3/user/login";
 pub const PATH_CAMERAS_ALL: &str = "/api/v3/camera/all";
 pub const PATH_CAMERA: &str = "/api/v3/camera/";
-pub const PATH_PHOTOS: &str = "/api/v3/photos/all";
+pub const PATH_PHOTOS: &str = "/api/v3/photo/all";
 
 // **** Login
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
@@ -45,7 +46,7 @@ pub struct Camera {
     #[serde(rename = "activationDate")]
     pub activation_date: String,
 
-    #[serde(rename = "Config")]
+    #[serde(rename = "config")]
     pub config: Config,
 
     #[serde(rename = "hdSince")]
@@ -80,67 +81,67 @@ pub struct Camera {
 #[serde(default)]
 pub struct Config {
     #[serde(rename = "batteryType")]
-    battery_type: String,
+    pub battery_type: String,
 
     #[serde(rename = "capture")]
-    capture: bool,
+    pub capture: bool,
 
     #[serde(rename = "captureMode")]
-    capture_mode: String,
+    pub capture_mode: String,
 
     #[serde(rename = "dateFormat")]
-    date_format: String,
+    pub date_format: String,
 
     #[serde(rename = "delay")]
-    delay: String,
+    pub delay: String,
 
     #[serde(rename = "multiShot")]
-    multi_shot: i64,
+    pub multi_shot: i64,
 
     #[serde(rename = "name")]
     pub name: String,
 
     #[serde(rename = "operationMode")]
-    operation_mode: String,
+    pub operation_mode: String,
 
     #[serde(rename = "quality")]
-    quality: String,
+    pub quality: String,
 
     #[serde(rename = "schedule")]
-    schedule: Vec<Vec<i64>>,
+    pub schedule: Vec<Vec<i64>>,
 
     #[serde(rename = "sensibility")]
-    sensibility: Sensibility,
+    pub sensibility: Sensibility,
 
     #[serde(rename = "smallPicWidth")]
-    small_pic_width: i64,
+    pub small_pic_width: i64,
 
     #[serde(rename = "stamp")]
-    stamp: bool,
+    pub stamp: bool,
 
     #[serde(rename = "temperatureUnit")]
-    temperature_unit: String,
+    pub temperature_unit: String,
 
     #[serde(rename = "timeFormat")]
-    time_format: i64,
+    pub time_format: i64,
 
     #[serde(rename = "transmitAuto")]
-    transmit_auto: bool,
+    pub transmit_auto: bool,
 
     #[serde(rename = "transmitFormat")]
-    transmit_format: String,
+    pub transmit_format: String,
 
     #[serde(rename = "transmitFreq")]
-    transmit_freq: i64,
+    pub transmit_freq: i64,
 
     #[serde(rename = "transmitTime")]
-    transmit_time: TransmitTime,
+    pub transmit_time: TransmitTime,
 
     #[serde(rename = "transmitUser")]
-    transmit_user: bool,
+    pub transmit_user: bool,
 
     #[serde(rename = "triggerSpeed")]
-    trigger_speed: String,
+    pub trigger_speed: String,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
@@ -400,6 +401,7 @@ pub struct Plan {
 pub async fn cameras(client: &Client) -> Result<Cameras> {
     let result: Cameras = client.get_request(PATH_CAMERAS_ALL, true).await?;
 
+    debug!("spypoint::cameras,result=> \n{:?}\n", result);
     Ok(result)
 }
 
@@ -422,7 +424,7 @@ pub struct PhotosRequest {
     #[serde(rename = "dateEnd")]
     date_end: String,
 
-    #[serde(rename = "mediaType")]
+    #[serde(rename = "mediaTypes")]
     media_type: Vec<String>,
 
     #[serde(rename = "species")]
@@ -471,8 +473,6 @@ pub struct Photo {
     pub large: Hd,
     #[serde(rename = "camera")]
     pub camera: String,
-    #[serde(rename = "hd")]
-    pub hd: Hd,
 }
 
 #[derive(Serialize, Debug, Clone, Default, Deserialize)]
@@ -511,10 +511,10 @@ pub async fn camera_photos(
         camera: vec![camera_id],
         limit: limit.unwrap_or(125),
         date_end: String::from("2100-01-01T00:00:00.000Z"),
-        media_type: vec![],
-        species: vec![],
+        ..Default::default()
     };
 
+    debug!("spypoint::camera_photos, request: {:?}", req);
     let response = client
         .send_request(&req, Method::POST, PATH_PHOTOS, true)
         .await?;
@@ -528,7 +528,9 @@ mod tests {
 
     use crate::{client, spypoint};
     use crate::client::Server;
-    use crate::spypoint::{Login, LoginResponse, PATH_CAMERA, PATH_CAMERAS_ALL, PATH_LOGIN};
+    use crate::spypoint::{
+        Login, LoginResponse, PATH_CAMERA, PATH_CAMERAS_ALL, PATH_LOGIN, PATH_PHOTOS,
+    };
 
     #[test]
     fn login() {
@@ -564,6 +566,61 @@ mod tests {
             login_mock.assert();
 
             assert!(!result.is_err());
+        });
+    }
+
+    fn camera_photos() {
+        let mock_server = MockServer::start();
+        let url = format!("http://{}", mock_server.address());
+        let resp = LoginResponse {
+            uuid: String::from("7777777777777AA"),
+            token: String::from("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7Il9pZCI6IjVmMTQ1YWFlMjQ1YzIzMDAxN2QzMDUxZSJ9LCJzZXNzaW9uIjp7ImlkIjoiOWM5Nzc2YmEtNjIwYS00YWYyLTljNDItMmQzOGU5NTIzODJhIn0sImlhdCI6MTcxOTc5NTI0NSwiZXhwIjoxNzE5ODgxNjQ1fQ.xDrO__0U5aVjFXdYyVE2GuAh_vniuuJrGqqHjzwcKJw")
+        };
+        let auth = format!("Bearer {}", resp.token);
+        let login_mock = mock_server.mock(|when, then| {
+            when.method(GET)
+                .path(PATH_PHOTOS)
+                .header("Authorization", auth);
+            then.status(200).body(CAMERA_PHOTOS);
+        });
+
+        let server = Server {
+            user_name: String::from("ed"),
+            password: String::from("money"),
+            host: url,
+        };
+
+        let client = client::Client::new(server).expect("spypoint client");
+        client.set_auth(resp.token.clone());
+
+        tokio_test::block_on(async {
+            let result =
+                spypoint::camera_photos(&client, "66985496c6eb10dbad5c51f6".to_string(), Some(120))
+                    .await;
+
+            login_mock.assert();
+
+            assert!(!result.is_err());
+            let photos = result.expect("camera response");
+
+            assert_eq!(photos.camera_ids.len(), 1);
+            assert_eq!(photos.photos.len(), 4);
+            assert_eq!(photos.count_photos, 4);
+
+            for photo in photos.photos {
+                assert!(!photo.camera.is_empty());
+                assert!(!photo.date.is_empty());
+                assert!(!photo.id.is_empty());
+                assert!(!photo.origin_date.is_empty());
+                assert!(!photo.origin_name.is_empty());
+                assert!(photo.origin_size > 0);
+                assert!(!photo.tag.is_empty());
+
+                assert!(!photo.large.verb.is_empty());
+                assert!(!photo.large.path.is_empty());
+                assert!(!photo.large.host.is_empty());
+                assert!(!photo.large.headers.is_empty());
+            }
         });
     }
 
@@ -624,7 +681,7 @@ mod tests {
             when.method(GET)
                 .path(PATH_CAMERAS_ALL)
                 .header("Authorization", auth);
-            then.status(200).body(ALL_CAMERAS_RESPONSE);
+            then.status(200).body(CAMERA_ALL);
         });
 
         let server = Server {
@@ -644,8 +701,13 @@ mod tests {
             assert!(!result.is_err());
             let c = result.expect("all cameras response");
 
+            println!("cameras: \n{:?}\n", c);
+
             assert!(c.len() > 0);
-            assert_ne!(c[0].config.name, "");
+            assert!(!c[0].config.name.is_empty());
+            assert!(!c[0].status.last_update.is_empty());
+            assert!(!c[0].id.is_empty());
+            assert!(!c[0].activation_date.is_empty());
         });
     }
 
@@ -653,6 +715,10 @@ mod tests {
   "uuid": "5f14230017d3051e",
   "token": "eyJyIjp7Il9pZCI6IjVmMTQ1YWFlMjQ1YzIzMDAxN2QzMDUxZSJ9LCJzZXNzaW9uIjp7ImlkIjoiOWM5Nzc2YmEtNjIwYS00YWYyLTljNDItMmQzOGU5NTIzODJhIn0sImlhdCI6MTcxOTc5NTI0NSwiZXhwIjoxNzE5ODgxNjQ1fQ.xDrO__0U5aVjFXdYyVE2GuAh_vniuuJrGqqHjzwcKJw"
 }"#;
+
+    const CAMERA_PHOTOS: &str = r#"
+    {"cameraId":null,"cameraIds":["66985496c6eb10dbad5c51f6"],"countPhotos":4,"photos":[{"camera":"66985496c6eb10dbad5c51f6","date":"2024-07-17T23:52:04.697Z","id":"669859240be0b2c3a252c536","large":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0004_2024071723529TSux.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=48f4edc1cd037ef86062a7dad966c61423048104d47ef5a106db6a105ba6d56b","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"medium":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0004_M_2024071723529TSux.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=07dd13be3f4978cc004d21fc29d2d64908f28515811e0df8aa1f4e6065ff3688","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"originDate":"2024-07-17T19:51:41.000Z","originName":"PICT0004.JPG","originSize":16483,"small":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0004_S_2024071723529TSux.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=94728715d1e2266e25deccc7465681d674419214a227d58395125a40f3533c7f","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"tag":["day"]},{"camera":"66985496c6eb10dbad5c51f6","date":"2024-07-17T23:50:54.470Z","id":"669858de7038784df54e44fb","large":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0003_202407172350WKsik.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=72084d6f90626113747912c40befff80949b00f4fd1f478e358493ca40dcdb70","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"medium":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0003_M_202407172350WKsik.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=f51f37fa06ce04b8a7637e3467b81e40e865a2258585b2fa3c05a4edb0cc87df","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"originDate":"2024-07-17T19:50:30.000Z","originName":"PICT0003.JPG","originSize":16147,"small":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0003_S_202407172350WKsik.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=29964fd438e1d6a79ca01ec0f6a5dd58536b96e7ac1b4f9a1490b99339d4a551","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"tag":["day"]},{"camera":"66985496c6eb10dbad5c51f6","date":"2024-07-17T23:50:54.470Z","id":"669858de7038784df54e44f9","large":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0002_202407172350OvInL.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=fed7dc39bc490aa1577f8b0e89a6eaabebfc005eee21c1f77bef88382b913f6d","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"medium":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0002_M_202407172350OvInL.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=e424782ae227acb927ef37ce5df026d13a8df32ef93020400deffebc062d4f5c","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"originDate":"2024-07-17T19:34:51.000Z","originName":"PICT0002.JPG","originSize":15504,"small":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0002_S_202407172350OvInL.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=ac02533eb070c06b79be3eff7135022e682e9d325fa01cc5166f5a7c2ad1a2e8","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"tag":["day"]},{"camera":"66985496c6eb10dbad5c51f6","date":"2024-07-17T23:50:54.470Z","id":"669858de7038784df54e44fa","large":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0001_202407172350OQVSP.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=97d41e90761cac4a92f0695d8cce0b02c4afb1fb77063abcfed5beac9672fd4c","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"medium":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0001_M_202407172350OQVSP.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=5d5d5de912f3a98529bdf552e901c756990d74f83fcedb96fa3a8ef781d5bac4","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"originDate":"2024-07-17T19:33:42.000Z","originName":"PICT0001.JPG","originSize":18409,"small":{"verb":"GET","path":"spypoint-production-account-ehcpvywr/5f145aae245c230017d3051e/66985496c6eb10dbad5c51f6/20240717/PICT0001_S_202407172350OQVSP.jpg?X-Amz-Expires=86400&X-Amz-Date=20240728T160811Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA4TENZYKLZ2QLZNPE%2F20240728%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=daeedee6b7b807c767d2d30b77b88a5814baec46904d75a4fb7db0bc693b2012","host":"s3.amazonaws.com","headers":[{"name":"Content-Type","value":"image/jpeg"}]},"tag":["day"]}]}
+    "#;
 
     const CAMERA_RESPONSE: &str = r#"
     {
@@ -942,4 +1008,8 @@ mod tests {
     "ptpNotifications": []
   }
 ]"#;
+
+    const CAMERA_ALL: &str = r#"
+   [{"activationDate":"2024-07-17T23:43:19.162Z","config":{"batteryType":"AUTO","capture":false,"captureMode":"photo","dateFormat":"mdy","detectionSchedule":[],"factory":false,"gps":true,"image":{"jpegOptim":{"dayTargetSize":500,"nightTargetSize":500,"triggerSize":60},"quality":{"qFactorDay":50,"qFactorNight":50,"resizeMethod":1},"transmit":{"maxSize":512,"minSize":1,"maxHDSize":1024,"minHDSize":5,"maxHDVideoSize":51200,"minHDVideoSize":500}},"logLevel":"warning","motionDelay":60,"multiShot":1,"name":"FLEX-3TME","operationMode":"standard","quality":"high","schedule":[[0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0]],"sensibility":{"high":15,"level":"medium","low":35,"medium":20},"smallPicWidth":720,"timeFormat":12,"timeLapse":3600,"transmitAuto":true,"transmitFormat":"full","transmitFreq":12,"transmitTime":{"hour":23,"minute":58},"transmitUser":true},"creationDate":"2024-07-17T23:43:19.162Z","dataMatrixKey":"I6M2KID3TME","hdSince":"2024-07-17T19:32:57.000Z","id":"66985496c6eb10dbad5c51f6","status":{"batteries":[100,0,0],"batteryType":"AA","activePowerSource":0,"powerSources":[{"location":"TRAY1","type":"AA","percentage":100,"voltage":12183}],"capability":{"hdRequest":true,"video":true},"coordinates":[{"dateTime":"2024-07-17T19:52:21.000Z","latitude":"N25 32.654460","longitude":"W80 26.399520","position":{"type":"Point","coordinates":[-80.439992,25.544241]},"geohash":"dhwc3d1murds"}],"installDate":"2024-07-17T19:48:54.000Z","lastUpdate":"2024-07-17T19:52:21.000Z","memory":{"size":29798,"used":1},"model":"FLEX","modemFirmware":"EG91NAFBR05A07M4G","notifications":["sd_card_one_partition"],"signal":{"bar":4,"dBm":-94,"mcc":311,"mnc":480,"type":"LTE","processed":{"percentage":100,"bar":5,"lowSignal":false}},"sim":"89148000008057211843","temperature":{"unit":"F","value":86},"version":"1.8.0-97-gd0a85c9"},"ucid":"866846054077507","user":"5f145aae245c230017d3051e","isCellular":true,"subscriptions":[{"id":"","cameraId":"66985496c6eb10dbad5c51f6","paymentStatus":"active","isActive":true,"plan":{"name":"Free","id":"Free","isActive":true,"isFree":true,"isSelectable":true,"photoCountPerMonth":100,"pricePerMonthIfPaidPerMonth":0,"pricePerMonthIfPaidAnnually":0,"pricePerYear":0,"pricePerMonthIfPaidAnnuallyInsidersClub":0,"pricePerMonthIfPaidPerMonthInsidersClub":0,"pricePerYearInsidersClub":0,"rebateIfPaidAnnually":0,"rebatePercentageInsidersClub":20,"showBanner":"","isUpgradable":true,"isDowngradable":false},"currency":"USD","paymentFrequency":"month_by_month","isFree":true,"startDateBillingCycle":"2024-07-17T23:43:19.163Z","endDateBillingCycle":"2024-08-17T23:43:19.163Z","monthEndBillingCycle":"2024-08-17T23:43:19.163Z","photoCount":4,"isAutoRenew":false}],"ptpNotifications":[]}]
+    "#;
 }

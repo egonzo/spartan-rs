@@ -1,10 +1,10 @@
 use std::{env, process};
 use std::time::Duration;
 
-use log::{error, info};
+use log::{debug, error, info};
 use mongodb::bson::{DateTime, doc};
 
-use spartan::{client, spypoint, sys, sys::mgo};
+use spartan::{client, spypoint, sys::mgo};
 use spartan::cameras::Camera;
 use spartan::cameras::pictures::Picture;
 use spartan::client::Server;
@@ -82,7 +82,13 @@ async fn main() {
         let msg = format!("error pinging db: {:?}", e);
         error!("{}", msg);
         // send msg to Slack
-        let _ = slack::save_error(client.http_client(), config.slack_url.clone(), msg).await;
+        let _ = slack::save_error(
+            client.http_client(),
+            config.slack_url.clone(),
+            msg,
+            String::from("Sync.rs"),
+        )
+        .await;
         process::exit(1);
     }
 
@@ -100,7 +106,13 @@ async fn main() {
             let msg = format!("sync::main error logging into spypoint, {:?}", e);
             error!("{}", msg);
             // send msg to Slack
-            let _ = slack::save_error(client.http_client(), config.slack_url.clone(), msg).await;
+            let _ = slack::save_error(
+                client.http_client(),
+                config.slack_url.clone(),
+                msg,
+                String::from("Sync.rs"),
+            )
+            .await;
 
             process::exit(1);
         }
@@ -115,12 +127,18 @@ async fn main() {
             let msg = format!("sync.rs::main error loading cameras, {:?}", e);
             error!("{}", msg);
             // send msg to Slack
-            let _ = slack::save_error(client.http_client(), config.slack_url.clone(), msg).await;
+            let _ = slack::save_error(
+                client.http_client(),
+                config.slack_url.clone(),
+                msg,
+                String::from("Sync.rs"),
+            )
+            .await;
             process::exit(1);
         }
     };
 
-    info!("sync:main {} cameras loaded...", cameras.len());
+    info!("sync:main {} camera(s) loaded...", cameras.len());
 
     let mut err_counter = 0i32;
 
@@ -128,7 +146,7 @@ async fn main() {
     for camera in cameras {
         info!(
             "sync::main processing camera, {}...",
-            camera.config.name.clone()
+            camera.clone().config.name
         );
 
         let mut sync_result = SyncResult {
@@ -147,13 +165,18 @@ async fn main() {
             Err(e) => {
                 let msg = format!(
                     "sync.rs::main getting camera detail, {}...{:?}",
-                    camera.config.name.clone(),
+                    camera.clone().config.name,
                     e,
                 );
                 error!("{}", msg);
                 // send msg to Slack
-                let _ =
-                    slack::save_error(client.http_client(), config.slack_url.clone(), msg).await;
+                let _ = slack::save_error(
+                    client.http_client(),
+                    config.slack_url.clone(),
+                    msg,
+                    String::from("Sync.rs"),
+                )
+                .await;
 
                 err_counter += 1;
                 continue;
@@ -162,18 +185,26 @@ async fn main() {
 
         //  Convert and Upsert Camera
         let spartan_camera = Camera::from(camera_detail);
+
+        debug!("sync.rs::main camera to save\n{:?}\n", spartan_camera);
+
         match spartan_camera.save(&db).await {
             Ok(()) => {}
             Err(e) => {
                 let msg = format!(
                     "sync::main saving camera, {}...{:?}",
-                    camera.config.name.clone(),
+                    camera.clone().config.name,
                     e
                 );
                 error!("{}", msg);
                 // send msg to Slack
-                let _ =
-                    slack::save_error(client.http_client(), config.slack_url.clone(), msg).await;
+                let _ = slack::save_error(
+                    client.http_client(),
+                    config.slack_url.clone(),
+                    msg,
+                    String::from("Sync.rs"),
+                )
+                .await;
 
                 err_counter += 1;
                 continue;
@@ -184,32 +215,40 @@ async fn main() {
         tokio::time::sleep(Duration::new(2, 0)).await;
 
         // Load Last X Camera Pictures
-        let photo_response = match spypoint::camera_photos(&client, camera.id, Some(125)).await {
-            Ok(p) => p,
-            Err(e) => {
-                let msg = format!(
-                    "sync.rs::main retrieving photos for camera, {}...{:?}",
-                    camera.config.name.clone(),
-                    e
-                );
-                error!("{}", msg);
-                // send msg to Slack
-                let _ =
-                    slack::save_error(client.http_client(), config.slack_url.clone(), msg).await;
+        let photo_response =
+            match spypoint::camera_photos(&client, camera.clone().id, Some(125)).await {
+                Ok(p) => p,
+                Err(e) => {
+                    let msg = format!(
+                        "sync.rs::main retrieving photos for camera, {}...{:?}",
+                        camera.clone().config.name,
+                        e
+                    );
+                    error!("{}", msg);
+                    // send msg to Slack
+                    let _ = slack::save_error(
+                        client.http_client(),
+                        config.slack_url.clone(),
+                        msg,
+                        String::from("Sync.rs"),
+                    )
+                    .await;
 
-                sync_result.errors += 1;
-                err_counter += 1;
-                continue;
-            }
-        };
+                    sync_result.errors += 1;
+                    err_counter += 1;
+                    continue;
+                }
+            };
 
         for photo in photo_response.photos {
             let mut picture = Picture::from(photo);
 
             // check if pic exists and date
-            let pic_date = picture.date.to_system_time();
-            let cutoff = sys::sub_date(pic_date, DAYS_OF_PICS);
-            if cutoff > pic_date {
+            if !picture.within_days(config.sync_days as i64) {
+                info!(
+                    "sync.rs::main picture date not within range Id: {}, Date: {}",
+                    picture.photo_id, picture.picture_date
+                );
                 sync_result.skipped += 1;
                 continue;
             }
@@ -217,10 +256,19 @@ async fn main() {
             // check DB to see if pic exists.
             if let Ok(x) = picture.exists(&db).await {
                 if x {
+                    info!(
+                        "sync.rs::main picture exists in db, Id: {}, Date: {}",
+                        picture.photo_id, picture.picture_date
+                    );
                     sync_result.skipped += 1;
                     continue;
                 }
             }
+
+            debug!(
+                "sync.rs::main Picture with date {} and id {} does not exist",
+                picture.picture_date, picture.photo_id,
+            );
 
             // Set fields
             picture.account_id = spartan_camera.clone().account_id;
@@ -231,7 +279,7 @@ async fn main() {
                 .upload(
                     &db,
                     &client.http_client(),
-                    picture.location.clone(),
+                    spartan_camera.clone().name,
                     &gcp_client,
                     config.gcp_bucket.clone(),
                 )
@@ -240,14 +288,19 @@ async fn main() {
                 let msg = format!(
                     "sync.rs::main upload photo with date {} for camera, {}...{:?}",
                     picture.picture_date,
-                    camera.config.name.clone(),
+                    camera.clone().config.name,
                     e
                 );
 
                 error!("{}", msg);
                 // send msg to Slack
-                let _ =
-                    slack::save_error(client.http_client(), config.slack_url.clone(), msg).await;
+                let _ = slack::save_error(
+                    client.http_client(),
+                    config.slack_url.clone(),
+                    msg,
+                    String::from("Sync.rs"),
+                )
+                .await;
 
                 sync_result.errors += 1;
                 err_counter += 1;
@@ -256,12 +309,16 @@ async fn main() {
 
             // Sleep Thread?
             // tokio::time::sleep(Duration::new(2, 0)).await;
+            info!("sync.rs::main picture id: {} uploaded...", picture.photo_id);
             sync_result.uploaded += 1;
         }
 
         info!(
-            "sync::main processing camera, {}, complete",
-            camera.config.name.clone()
+            "sync::main processing camera, {}, skipped: {}, uploaded: {}, errors: {}, complete",
+            camera.clone().config.name,
+            sync_result.skipped,
+            sync_result.uploaded,
+            sync_result.errors,
         );
 
         // Save Sync Metrics for Camera.
@@ -273,7 +330,13 @@ async fn main() {
             );
             error!("{}", msg);
             // send msg to Slack
-            let _ = slack::save_error(client.http_client(), config.slack_url.clone(), msg).await;
+            let _ = slack::save_error(
+                client.http_client(),
+                config.slack_url.clone(),
+                msg,
+                String::from("Sync.rs"),
+            )
+            .await;
 
             err_counter += 1;
         }
@@ -293,7 +356,7 @@ pub struct Config {
     spypoint_pwd: String,
     spypoint_host: String,
     gcp_bucket: String,
-    sync_days: i32,
+    sync_days: u64,
     slack_url: String,
 }
 
@@ -309,13 +372,13 @@ impl Config {
         let sp_host = env::var("SPYPOINT_HOST").expect("SPYPOINT HOST");
         let slack_url = env::var("SLACK_URL").expect("SLACK_URL");
         let gcp_bucket = env::var("GOOGLE_CLOUD_BUCKET").expect("GOOGLE_CLOUD_BUCKET");
-
+        let sync_days = env::var("SYNC_DAYS").unwrap_or(String::from("2"));
         Config {
             spypoint_user: sp_user,
             spypoint_pwd: sp_pwd,
             spypoint_host: sp_host,
             gcp_bucket,
-            sync_days: 2,
+            sync_days: sync_days.parse::<u64>().unwrap_or(DAYS_OF_PICS),
             slack_url,
         }
     }

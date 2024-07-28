@@ -1,4 +1,5 @@
 use bson::DateTime;
+use log::debug;
 use mongodb::{bson, Collection, Database};
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,7 @@ const COLLECTION: &str = "cameras";
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Status {
     last_transmission_timestamp: i64,
-    #[serde(serialize_with = "bson::serde_helpers::serialize_bson_datetime_as_rfc3339_string")]
+    #[serde(with = "bson::serde_helpers::bson_datetime_as_rfc3339_string")]
     last_transmission: DateTime,
     memory: f64,
     temperature: f64,
@@ -23,7 +24,7 @@ pub struct Status {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GPS {
-    #[serde(serialize_with = "bson::serde_helpers::serialize_bson_datetime_as_rfc3339_string")]
+    #[serde(with = "bson::serde_helpers::bson_datetime_as_rfc3339_string")]
     last_updated_timestamp: DateTime,
     longitude: String,
     latitude: String,
@@ -43,7 +44,7 @@ pub struct Camera {
     pub name: String,
     pub r#type: String,
     pub updated_by: String,
-    #[serde(serialize_with = "bson::serde_helpers::serialize_bson_datetime_as_rfc3339_string")]
+    #[serde(with = "bson::serde_helpers::bson_datetime_as_rfc3339_string")]
     pub last_updated_timestamp: DateTime,
     pub registration_status: String,
     pub created_timestamp: String,
@@ -66,11 +67,11 @@ pub struct Camera {
 impl From<spypoint::Camera> for Camera {
     fn from(value: spypoint::Camera) -> Self {
         // last update
-        let last_update = bson::DateTime::parse_rfc3339_str(value.status.last_update)
+        let last_update = bson::DateTime::parse_rfc3339_str(value.clone().status.last_update)
             .unwrap_or(bson::DateTime::now());
 
         // Subscription
-        let subscription = value.subscriptions.into_iter().next();
+        let subscription = value.clone().subscriptions.into_iter().next();
         let mut reg_status = String::from("");
         let mut photo_count = 0;
         if subscription.is_some() {
@@ -80,7 +81,13 @@ impl From<spypoint::Camera> for Camera {
         }
 
         // Battery Level
-        let batteries = value.status.batteries.into_iter().next().unwrap_or(0);
+        let batteries = value
+            .clone()
+            .status
+            .batteries
+            .into_iter()
+            .next()
+            .unwrap_or(0);
 
         let status = Status {
             last_transmission_timestamp: 0, //Redo
@@ -115,8 +122,8 @@ impl From<spypoint::Camera> for Camera {
 
         Camera {
             id: None,
-            camera_id: value.id,
-            name: value.config.clone().name,
+            camera_id: value.clone().id,
+            name: value.clone().config.name,
             r#type: String::from("spypoint"),
             updated_by: String::from(""),
             last_updated_timestamp: last_update,
@@ -141,22 +148,20 @@ impl From<spypoint::Camera> for Camera {
 
 impl Camera {
     pub async fn save(&self, db: &Database) -> crate::Result<()> {
+        debug!("cameras::save, camera-> {:?}", self);
         let coll: Collection<Camera> = db.collection(COLLECTION);
         let filter = doc! {
             "camera_id": &self.camera_id,
         };
 
-        let _res = coll
-            .find_one_and_update(filter, bson::to_document(self).unwrap_or_default())
-            .upsert(true)
-            .await?;
-
+        let _ = coll.find_one_and_replace(filter, self).upsert(true).await?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use chrono::Utc;
     use mongodb::bson;
     use serde_json;
 
@@ -165,7 +170,18 @@ mod tests {
 
     #[test]
     fn parse_date() {
-        bson::DateTime::parse_rfc3339_str("2022-01-25T14:53:00.000Z").unwrap();
+        let pic_date = bson::DateTime::parse_rfc3339_str("2022-01-25T14:53:00.000Z")
+            .unwrap()
+            .to_chrono();
+        println!("pic_date: {:?}", pic_date);
+
+        let now = Utc::now();
+        println!("now: {:?}", now);
+
+        let duration = now.signed_duration_since(&pic_date);
+        println!("duration {}", duration);
+        println!("duration days {}", duration.num_days());
+        assert!(duration.num_days().abs() > 2);
     }
 
     #[test]
@@ -173,6 +189,10 @@ mod tests {
         let sp_camera: spypoint::Camera = serde_json::from_str(SPY_CAMERA_JSON).unwrap();
 
         let camera: Camera = Camera::from(sp_camera);
+
+        assert!(!camera.name.is_empty());
+        assert!(!camera.camera_id.is_empty());
+        assert!(!camera.location.is_empty());
 
         let json = serde_json::to_string(&camera).unwrap();
         println!("{json}");

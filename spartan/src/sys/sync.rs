@@ -4,7 +4,6 @@ use mongodb::bson::DateTime;
 use serde::{Deserialize, Serialize};
 
 const SYNC_COLLECTION: &str = "sync";
-const SYNC_ERROR_COLLECTION: &str = "sync_errors";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SyncError {
